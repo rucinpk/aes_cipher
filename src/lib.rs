@@ -7,7 +7,7 @@ use common::{
         sub_bytes_no_mem, sub_rows,
     },
     key::AESKey,
-    utils::decode_hex_to_array,
+    utils::decode_to_hex_vector,
     State,
 };
 
@@ -23,13 +23,6 @@ pub enum AESOptimization {
     NoOptimization,
     MemoryEfficient,
     SpeedEfficient,
-}
-
-pub enum ModeOfOperation {
-    EBC,
-    CBC,
-    CTR,
-    GCM,
 }
 
 pub fn get_round_subkey_for_no_mem<T>(round: usize, key: &T, inverse_columns: bool) -> [[u8; 4]; 4]
@@ -82,11 +75,20 @@ where
     ]
 }
 
-pub fn decrypt<'a, T>(ciphertext: &'a str, mut key: T, optimization: AESOptimization) -> String
+pub fn decrypt_block<'a, T>(
+    ciphertext: &'a str,
+    mut key: T,
+    optimization: AESOptimization,
+) -> String
 where
     T: AESKey,
 {
-    let ciphertext = decode_hex_to_array(ciphertext);
+    let ciphertext: [u8; 16] =
+        decode_to_hex_vector(ciphertext)
+            .try_into()
+            .unwrap_or_else(|v: Vec<u8>| {
+                panic!("Expected a Vec of length {} but it was {}", 16, v.len())
+            });
     let mut state = State::from_hex_vector(&ciphertext);
     let num_rounds = key.num_rounds();
     let mut round = num_rounds;
@@ -148,11 +150,16 @@ where
     hex::encode(*state)
 }
 
-pub fn encrypt<'a, T>(message: &'a str, mut key: T, optimization: AESOptimization) -> String
+pub fn encrypt_block<'a, T>(message: &'a str, mut key: T, optimization: AESOptimization) -> String
 where
     T: AESKey,
 {
-    let message = decode_hex_to_array(message);
+    let message: [u8; 16] =
+        decode_to_hex_vector(message)
+            .try_into()
+            .unwrap_or_else(|v: Vec<u8>| {
+                panic!("Expected a Vec of length {} but it was {}", 16, v.len())
+            });
     let mut state = State::from_hex_vector(&message);
 
     match optimization {
@@ -230,6 +237,8 @@ mod tests {
     use crate::common::{
         cipher_operations::{inv_sub_byte_no_mem, mult, sbox_no_mem},
         key::{KeyNk4, KeyNk6, KeyNk8},
+        modes::encrypt_ecb,
+        padding::{pad_message_pkcs7, unpad_message_pkcs7},
     };
 
     use super::*;
@@ -273,7 +282,7 @@ mod tests {
     fn it_encrypts_message_128_key() {
         let key = KeyNk4::new("000102030405060708090a0b0c0d0e0f");
 
-        let result = encrypt(
+        let result = encrypt_block(
             "00112233445566778899aabbccddeeff",
             key,
             AESOptimization::NoOptimization,
@@ -282,7 +291,7 @@ mod tests {
 
         let key = KeyNk4::new("000102030405060708090a0b0c0d0e0f");
 
-        let result = encrypt(
+        let result = encrypt_block(
             "00112233445566778899aabbccddeeff",
             key,
             AESOptimization::SpeedEfficient,
@@ -291,7 +300,7 @@ mod tests {
 
         let key = KeyNk4::new("000102030405060708090a0b0c0d0e0f");
 
-        let result = encrypt(
+        let result = encrypt_block(
             "00112233445566778899aabbccddeeff",
             key,
             AESOptimization::MemoryEfficient,
@@ -303,7 +312,7 @@ mod tests {
     fn it_encrypts_message_192_key() {
         let key = KeyNk6::new("000102030405060708090a0b0c0d0e0f1011121314151617");
 
-        let result = encrypt(
+        let result = encrypt_block(
             "00112233445566778899aabbccddeeff",
             key,
             AESOptimization::NoOptimization,
@@ -312,7 +321,7 @@ mod tests {
 
         let key = KeyNk6::new("000102030405060708090a0b0c0d0e0f1011121314151617");
 
-        let result = encrypt(
+        let result = encrypt_block(
             "00112233445566778899aabbccddeeff",
             key,
             AESOptimization::SpeedEfficient,
@@ -321,7 +330,7 @@ mod tests {
 
         let key = KeyNk6::new("000102030405060708090a0b0c0d0e0f1011121314151617");
 
-        let result = encrypt(
+        let result = encrypt_block(
             "00112233445566778899aabbccddeeff",
             key,
             AESOptimization::MemoryEfficient,
@@ -333,7 +342,7 @@ mod tests {
     fn it_encrypts_message_256_key() {
         let key = KeyNk8::new("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f");
 
-        let result = encrypt(
+        let result = encrypt_block(
             "00112233445566778899aabbccddeeff",
             key,
             AESOptimization::NoOptimization,
@@ -342,7 +351,7 @@ mod tests {
 
         let key = KeyNk8::new("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f");
 
-        let result = encrypt(
+        let result = encrypt_block(
             "00112233445566778899aabbccddeeff",
             key,
             AESOptimization::MemoryEfficient,
@@ -351,7 +360,7 @@ mod tests {
 
         let key = KeyNk8::new("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f");
 
-        let result = encrypt(
+        let result = encrypt_block(
             "00112233445566778899aabbccddeeff",
             key,
             AESOptimization::SpeedEfficient,
@@ -362,21 +371,21 @@ mod tests {
     #[test]
     fn it_decrypts_message_128_key() {
         let key = KeyNk4::new("000102030405060708090a0b0c0d0e0f");
-        let result = decrypt(
+        let result = decrypt_block(
             "69c4e0d86a7b0430d8cdb78070b4c55a",
             key,
             AESOptimization::NoOptimization,
         );
         assert_eq!(result, "00112233445566778899aabbccddeeff");
         let key = KeyNk4::new("000102030405060708090a0b0c0d0e0f");
-        let result = decrypt(
+        let result = decrypt_block(
             "69c4e0d86a7b0430d8cdb78070b4c55a",
             key,
             AESOptimization::SpeedEfficient,
         );
         assert_eq!(result, "00112233445566778899aabbccddeeff");
         let key = KeyNk4::new("000102030405060708090a0b0c0d0e0f");
-        let result = decrypt(
+        let result = decrypt_block(
             "69c4e0d86a7b0430d8cdb78070b4c55a",
             key,
             AESOptimization::MemoryEfficient,
@@ -390,15 +399,15 @@ mod tests {
 
         let key = KeyNk6::new("000102030405060708090a0b0c0d0e0f1011121314151617");
 
-        let result = decrypt::<KeyNk6>(ciphertext, key, AESOptimization::NoOptimization);
+        let result = decrypt_block(ciphertext, key, AESOptimization::NoOptimization);
         assert_eq!(result, expected_plaintext);
         let key = KeyNk6::new("000102030405060708090a0b0c0d0e0f1011121314151617");
 
-        let result = decrypt::<KeyNk6>(ciphertext, key, AESOptimization::MemoryEfficient);
+        let result = decrypt_block(ciphertext, key, AESOptimization::MemoryEfficient);
         assert_eq!(result, expected_plaintext);
         let key = KeyNk6::new("000102030405060708090a0b0c0d0e0f1011121314151617");
 
-        let result = decrypt::<KeyNk6>(ciphertext, key, AESOptimization::SpeedEfficient);
+        let result = decrypt_block(ciphertext, key, AESOptimization::SpeedEfficient);
         assert_eq!(result, expected_plaintext);
     }
     #[test]
@@ -407,15 +416,15 @@ mod tests {
         let expected_plaintext = "00112233445566778899aabbccddeeff";
 
         let key = KeyNk8::new("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f");
-        let result = decrypt::<KeyNk8>(ciphertext, key, AESOptimization::NoOptimization);
+        let result = decrypt_block::<KeyNk8>(ciphertext, key, AESOptimization::NoOptimization);
         assert_eq!(result, expected_plaintext);
 
         let key = KeyNk8::new("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f");
-        let result = decrypt::<KeyNk8>(ciphertext, key, AESOptimization::SpeedEfficient);
+        let result = decrypt_block::<KeyNk8>(ciphertext, key, AESOptimization::SpeedEfficient);
         assert_eq!(result, expected_plaintext);
 
         let key = KeyNk8::new("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f");
-        let result = decrypt::<KeyNk8>(ciphertext, key, AESOptimization::MemoryEfficient);
+        let result = decrypt_block::<KeyNk8>(ciphertext, key, AESOptimization::MemoryEfficient);
         assert_eq!(result, expected_plaintext);
     }
 
@@ -427,5 +436,57 @@ mod tests {
         assert_eq!(key.get_round_key(5), [0x88, 0x54, 0x2c, 0xb1]);
         assert_eq!(key.get_round_key(10), [0x59, 0x35, 0x80, 0x7a]);
         assert_eq!(key.get_round_key(43), [0xb6, 0x63, 0x0c, 0xa6]);
+    }
+
+    #[test]
+    fn it_pads_message() {
+        let message = "68656c6c6f";
+        let expected_padded_message = "68656c6c6f0b0b0b0b0b0b0b0b0b0b0b";
+
+        let padded_message = pad_message_pkcs7(message, 16);
+        assert_eq!(expected_padded_message, padded_message);
+
+        let message = "971ACD01C9C7ADEACC83257926F490FF";
+        let expected_padded_message =
+            "971acd01c9c7adeacc83257926f490ff10101010101010101010101010101010";
+
+        let padded_message = pad_message_pkcs7(message, 16);
+        assert_eq!(expected_padded_message, padded_message);
+
+        let message = "F14ADBDA019D6DB7EFD91546E3FF84449BCB";
+        let expected_padded_message =
+            "f14adbda019d6db7efd91546e3ff84449bcb0e0e0e0e0e0e0e0e0e0e0e0e0e0e";
+
+        let padded_message = pad_message_pkcs7(message, 16);
+        assert_eq!(expected_padded_message, padded_message);
+    }
+    #[test]
+    fn it_unpads_message() {
+        let message = "68656c6c6f0b0b0b0b0b0b0b0b0b0b0b";
+        let expected_unpadded_message = "68656c6c6f";
+
+        let unpadded_message = unpad_message_pkcs7(message);
+        assert_eq!(expected_unpadded_message, unpadded_message);
+
+        let message = "971ACD01C9C7ADEACC83257926F490FF10101010101010101010101010101010";
+        let expected_unpadded_message = "971acd01c9c7adeacc83257926f490ff";
+
+        let unpadded_message = unpad_message_pkcs7(message);
+        assert_eq!(expected_unpadded_message, unpadded_message);
+
+        let message = "F14ADBDA019D6DB7EFD91546E3FF84449BCB0E0E0E0E0E0E0E0E0E0E0E0E0E0E";
+        let expected_unpadded_message = "f14adbda019d6db7efd91546e3ff84449bcb";
+
+        let unpadded_message = unpad_message_pkcs7(message);
+        assert_eq!(expected_unpadded_message, unpadded_message);
+    }
+    #[test]
+    fn it_encrypts_ecb_128() {
+        let message = "6bc1bee22e409f96e93d7e117393172aae2d8a571e03ac9c9eb76fac45af8e51";
+        let expected_ciphertext =
+            "3ad77bb40d7a3660a89ecaf32466ef97f5d3d58503b9699de785895a96fdbaafa254be88e037ddd9d79fb6411c3f9df8";
+        let key = KeyNk4::new("2b7e151628aed2a6abf7158809cf4f3c");
+        let ciphertext = encrypt_ecb(message, key);
+        assert_eq!(expected_ciphertext, ciphertext);
     }
 }

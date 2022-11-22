@@ -2,6 +2,8 @@ pub mod cipher_operations;
 pub mod constants;
 pub mod key;
 pub mod math;
+pub mod modes;
+pub mod padding;
 pub mod sbox;
 pub mod t_tables;
 pub mod utils;

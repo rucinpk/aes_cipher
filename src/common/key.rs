@@ -5,7 +5,7 @@ use crate::common::{
 
 use super::{
     cipher_operations::{inv_mix_columns, sub_word},
-    utils::{decode_hex_to_array, decode_hex_to_array_128, decode_hex_to_array_64},
+    utils::decode_to_hex_vector,
 };
 
 pub trait AESKey {
@@ -89,14 +89,17 @@ pub trait AESKey {
     fn set_round_key(&mut self, i: usize, value: [u8; 4]);
     fn get_key_at(&self, i: usize) -> u8;
 }
+#[derive(Copy, Clone)]
 pub struct KeyNk4 {
     data: [u8; 16],
     round_keys: [[u8; 4]; 44],
 }
+#[derive(Copy, Clone)]
 pub struct KeyNk6 {
     data: [u8; 24],
     round_keys: [[u8; 4]; 72],
 }
+#[derive(Copy, Clone)]
 pub struct KeyNk8 {
     data: [u8; 32],
     round_keys: [[u8; 4]; 120],
@@ -105,7 +108,11 @@ pub struct KeyNk8 {
 impl KeyNk4 {
     pub fn new(key_data: &str) -> KeyNk4 {
         KeyNk4 {
-            data: decode_hex_to_array(key_data),
+            data: decode_to_hex_vector(key_data)
+                .try_into()
+                .unwrap_or_else(|v: Vec<u8>| {
+                    panic!("Expected a Vec of length {} but it was {}", 16, v.len())
+                }),
             round_keys: [[u8::default(); 4]; 44],
         }
     }
@@ -113,7 +120,11 @@ impl KeyNk4 {
 impl KeyNk6 {
     pub fn new(key_data: &str) -> KeyNk6 {
         KeyNk6 {
-            data: decode_hex_to_array_64(key_data),
+            data: decode_to_hex_vector(key_data)
+                .try_into()
+                .unwrap_or_else(|v: Vec<u8>| {
+                    panic!("Expected a Vec of length {} but it was {}", 24, v.len())
+                }),
             round_keys: [[u8::default(); 4]; 72],
         }
     }
@@ -121,7 +132,11 @@ impl KeyNk6 {
 impl KeyNk8 {
     pub fn new(key_data: &str) -> KeyNk8 {
         KeyNk8 {
-            data: decode_hex_to_array_128(key_data),
+            data: decode_to_hex_vector(key_data)
+                .try_into()
+                .unwrap_or_else(|v: Vec<u8>| {
+                    panic!("Expected a Vec of length {} but it was {}", 32, v.len())
+                }),
             round_keys: [[u8::default(); 4]; 120],
         }
     }
